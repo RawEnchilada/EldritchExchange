@@ -4,3 +4,7 @@ run/
 runs/
 *.iml
 .idea/
+
+# Local-only docs
+AGENTS.md
+TODO.md
