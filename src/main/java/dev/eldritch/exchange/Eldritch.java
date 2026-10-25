@@ -14,6 +14,7 @@ public final class Eldritch {
         ModItems.ITEMS.register(modBus);
         ModBlocks.BLOCKS.register(modBus);
         ModParticles.PARTICLES.register(modBus);
+        ModCreativeTabs.TABS.register(modBus);
         ModMenus.MENUS.register(modBus);
         ModEntities.ENTITIES.register(modBus);
         container.registerConfig(ModConfig.Type.COMMON, EldritchConfig.SPEC);

@@ -1,6 +1,7 @@
 {
   "item.eldritch_exchange.codex": "Codex of the Void",
   "container.eldritch_exchange.codex": "Codex of the Void",
+  "itemGroup.eldritch_exchange": "Eldritch Exchange",
   "block.eldritch_exchange.mass": "Mass",
   "block.eldritch_exchange.void_campfire": "Void Campfire",
   "item.eldritch_exchange.mass": "Mass",

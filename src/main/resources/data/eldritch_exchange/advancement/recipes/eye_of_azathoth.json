@@ -1,0 +1,26 @@
+{
+  "criteria": {
+    "has_tentacle_flesh": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": [
+              "eldritch_exchange:tentacle_flesh"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_tentacle_flesh"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "eldritch_exchange:eye_of_azathoth"
+    ]
+  }
+}

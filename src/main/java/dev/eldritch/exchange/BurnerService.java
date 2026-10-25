@@ -44,7 +44,7 @@ public final class BurnerService {
     /** How often burn feedback is allowed to reach chat, in ticks (5 seconds). */
     private static final int REPORT_INTERVAL = 100;
     /** Madness removed per Eye of Azathoth burned. */
-    private static final int EYE_MADNESS = 2;
+    private static final int EYE_MADNESS = 5;
     /** Minimum ticks between Eyes for one player (one minute). Eyes past the limit wait on the burner. */
     private static final int EYE_COOLDOWN = 1200;
     private static final int MAX_LISTED_NAMES = 3;
