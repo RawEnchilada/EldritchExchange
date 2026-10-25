@@ -42,7 +42,7 @@ public final class ValueConfig {
     }
 
     public static Path path() {
-        return FMLPaths.CONFIGDIR.get().resolve("eldritch").resolve("values.json");
+        return FMLPaths.CONFIGDIR.get().resolve("eldritch_exchange").resolve("values.json");
     }
 
     /**

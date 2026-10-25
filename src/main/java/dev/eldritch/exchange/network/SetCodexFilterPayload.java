@@ -12,7 +12,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public record SetCodexFilterPayload(int containerId, String query, int sortMode) implements CustomPacketPayload {
 
     public static final Type<SetCodexFilterPayload> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath("eldritch", "set_codex_filter"));
+            new Type<>(ResourceLocation.fromNamespaceAndPath("eldritch_exchange", "set_codex_filter"));
 
     public static final StreamCodec<ByteBuf, SetCodexFilterPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT, SetCodexFilterPayload::containerId,

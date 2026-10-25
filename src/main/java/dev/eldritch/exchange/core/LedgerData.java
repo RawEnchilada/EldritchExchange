@@ -28,9 +28,15 @@ public final class LedgerData {
         private long demandIssuedTick;
         private long demandDeadlineTick;
         private String demandState = "NONE";
+        private Demand.Kind demandKind;
         private final List<String> sealed = new ArrayList<>();
         private int fulfilledDemands;
         private boolean nameRevealed;
+
+        // Favour: overall progression. Fulfilling demands raises it, letting them expire lowers it.
+        private int favour;
+        // Items dropped from this player's Codex after a demand expired.
+        private final List<String> forgotten = new ArrayList<>();
 
         // Tithe of the Abyss debt.
         private String titheItemId;
@@ -160,6 +166,12 @@ public final class LedgerData {
         }
 
         public void issueDemand(String itemId, int count, long issuedTick, long deadlineTick, List<String> sealedItems) {
+            issueDemand(Demand.Kind.ITEM, itemId, count, issuedTick, deadlineTick, sealedItems);
+        }
+
+        public void issueDemand(Demand.Kind kind, String itemId, int count, long issuedTick, long deadlineTick,
+                                List<String> sealedItems) {
+            demandKind = kind;
             demandItemId = itemId;
             demandCount = count;
             demandIssuedTick = issuedTick;
@@ -169,7 +181,50 @@ public final class LedgerData {
             sealed.addAll(sealedItems);
         }
 
+        public Demand.Kind demandKind() {
+            return demandKind;
+        }
+
+        public void setDemandKind(Demand.Kind kind) {
+            demandKind = kind;
+        }
+
+        public int favour() {
+            return favour;
+        }
+
+        public void addFavour(int delta) {
+            favour = Math.max(-10, Math.min(10, favour + delta));
+            if (favour >= Demand.NAME_FAVOUR) {
+                nameRevealed = true;
+            }
+        }
+
+        public void setFavour(int value) {
+            favour = Math.max(-10, Math.min(10, value));
+            if (favour >= Demand.NAME_FAVOUR) {
+                nameRevealed = true;
+            }
+        }
+
+        public List<String> forgotten() {
+            return forgotten;
+        }
+
+        public boolean isForgotten(String itemId) {
+            return forgotten.contains(itemId);
+        }
+
+        public void forget(List<String> itemIds) {
+            for (String id : itemIds) {
+                if (!forgotten.contains(id)) {
+                    forgotten.add(id);
+                }
+            }
+        }
+
         public void clearDemand() {
+            demandKind = null;
             demandItemId = null;
             demandCount = 0;
             demandIssuedTick = 0;

@@ -43,6 +43,10 @@ public final class BurnerService {
 
     /** How often burn feedback is allowed to reach chat, in ticks (5 seconds). */
     private static final int REPORT_INTERVAL = 100;
+    /** Madness removed per Eye of Azathoth burned. */
+    private static final int EYE_MADNESS = 2;
+    /** Minimum ticks between Eyes for one player (one minute). Eyes past the limit wait on the burner. */
+    private static final int EYE_COOLDOWN = 1200;
     private static final int MAX_LISTED_NAMES = 3;
 
     private static final class DisplayState {
@@ -71,6 +75,7 @@ public final class BurnerService {
 
     private static final Map<BlockPos, DisplayState> displays = new HashMap<>();
     private static final Map<UUID, BurnStats> burnStats = new HashMap<>();
+    private static final Map<UUID, Long> eyeCooldowns = new HashMap<>();
 
     private BurnerService() {
     }
@@ -79,7 +84,7 @@ public final class BurnerService {
         long now = server.getTickCount();
         ServerLevel level = server.overworld();
         if (now % 5 == 0) {
-            burnScan(server, level);
+            burnScan(server, level, true);
             lookDisplays(server, level, now);
         }
         if (now % 4 == 0) {
@@ -92,29 +97,59 @@ public final class BurnerService {
 
     public static boolean stands(Level level, LedgerData.Burner burner) {
         BlockPos pos = new BlockPos(burner.x(), burner.y(), burner.z());
-        return level.getBlockState(pos).is(Blocks.SOUL_CAMPFIRE)
+        return (level.getBlockState(pos).is(Blocks.SOUL_CAMPFIRE) || level.getBlockState(pos).is(ModBlocks.VOID_CAMPFIRE.get()))
                 && level.getBlockState(pos.below()).is(Blocks.REDSTONE_BLOCK);
     }
 
     /** Scans every bound burner once. Exposed so the game tests can drive a burn without waiting for a tick. */
     public static void burnOnce(MinecraftServer server) {
-        burnScan(server, server.overworld());
+        burnScan(server, server.overworld(), false);
     }
 
-    private static void burnScan(MinecraftServer server, ServerLevel level) {
+    /** With requirePlayer set, burners nobody is near are skipped, so idle burners cost nothing. */
+    private static void burnScan(MinecraftServer server, ServerLevel level, boolean requirePlayer) {
         Ledger ledger = Ledger.get(server);
         boolean dirty = false;
         for (Map.Entry<UUID, LedgerData.Burner> entry : ledger.data.burners().entrySet()) {
             LedgerData.Burner burner = entry.getValue();
-            if (!stands(level, burner)) {
+            if (!stands(level, burner)
+                    || requirePlayer && !level.hasNearbyAlivePlayer(burner.x() + 0.5, burner.y(), burner.z() + 0.5, 32)) {
                 continue;
             }
             AABB box = new AABB(burner.x(), burner.y() - 0.5, burner.z(), burner.x() + 1, burner.y() + 2, burner.z() + 1);
             for (ItemEntity item : level.getEntitiesOfClass(ItemEntity.class, box)) {
                 ItemStack stack = item.getItem();
+                if (!item.isAlive()) {
+                    continue;
+                }
+                if (stack.is(ModItems.EYE_OF_AZATHOTH.get())) {
+                    // The Eye is never learned or valued. Every Eye lowers madness, but the message is shown once a minute.
+                    long eyeNow = server.getTickCount();
+                    ledger.data.addMadness(entry.getKey(), -EYE_MADNESS * stack.getCount());
+                    item.discard();
+                    dirty = true;
+                    Long last = eyeCooldowns.get(entry.getKey());
+                    ServerPlayer sp = server.getPlayerList().getPlayer(entry.getKey());
+                    if (sp != null && (last == null || eyeNow - last >= EYE_COOLDOWN)) {
+                        eyeCooldowns.put(entry.getKey(), eyeNow);
+                        sp.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                                "The Eye sinks into the flame. Your thoughts grow quiet.")
+                                .withStyle(net.minecraft.ChatFormatting.AQUA));
+                    }
+                    continue;
+                }
+                if (stack.is(ModItems.TENTACLE_FLESH.get())) {
+                    // Flesh is food for the burner: it resets starvation but yields no essence.
+                    LedgerData.Account fed = ledger.data.account(entry.getKey());
+                    fed.setLastFedTick(server.getTickCount());
+                    fed.setStarvationTier(0);
+                    item.discard();
+                    dirty = true;
+                    continue;
+                }
                 String itemId = ValueTable.itemId(stack.getItem());
                 long value = ValueTable.value(itemId);
-                if (value <= 0 || !item.isAlive()) {
+                if (value <= 0) {
                     continue;
                 }
                 boolean isNew = Economy.burn(ledger.data, entry.getKey(), itemId, value, stack.getCount());
@@ -154,10 +189,8 @@ public final class BurnerService {
                         account.fulfilDemand();
                         account.setFulfilledDemands(account.fulfilledDemands() + 1);
                         account.sealed().clear();
+                        account.addFavour(1);
                         ledger.data.addMadness(entry.getKey(), -15);
-                        if (account.fulfilledDemands() >= 3) {
-                            account.setNameRevealed(true);
-                        }
                         ServerPlayer sp = server.getPlayerList().getPlayer(entry.getKey());
                         if (sp != null) {
                             sp.sendSystemMessage(net.minecraft.network.chat.Component.literal(
@@ -167,11 +200,12 @@ public final class BurnerService {
                         // store remaining count back via re-issue? Account has no setter for count.
                         // Use a small mutable hack: clear and re-issue with remaining.
                         String demanded = account.demandItemId();
+                        dev.eldritch.exchange.core.Demand.Kind kind = account.demandKind();
                         long issued = account.demandIssuedTick();
                         long deadline = account.demandDeadlineTick();
                         List<String> sealed = new ArrayList<>(account.sealed());
                         account.clearDemand();
-                        account.issueDemand(demanded, remaining, issued, deadline, sealed);
+                        account.issueDemand(kind, demanded, remaining, issued, deadline, sealed);
                     }
                 }
                 burnEffects(level, burner);
@@ -241,7 +275,7 @@ public final class BurnerService {
     }
 
     private static void burnEffects(ServerLevel level, LedgerData.Burner burner) {
-        level.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, burner.x() + 0.5, burner.y() + 1.2, burner.z() + 0.5,
+        level.sendParticles(ModParticles.VOID_FLAME.get(), burner.x() + 0.5, burner.y() + 1.2, burner.z() + 0.5,
                 40, 0.3, 0.4, 0.3, 0.05);
         level.sendParticles(ParticleTypes.PORTAL, burner.x() + 0.5, burner.y() + 1.2, burner.z() + 0.5,
                 20, 0.2, 0.2, 0.2, 0.5);
@@ -252,12 +286,12 @@ public final class BurnerService {
     private static void flameRing(MinecraftServer server, ServerLevel level, long now) {
         double angle = (now % 628) / 100.0;
         for (LedgerData.Burner burner : Ledger.get(server).data.burners().values()) {
-            if (!stands(level, burner)) {
+            if (!stands(level, burner) || !level.hasNearbyAlivePlayer(burner.x() + 0.5, burner.y(), burner.z() + 0.5, 48)) {
                 continue;
             }
             for (int k = 0; k < 3; k++) {
                 double a = angle + k * (Math.PI * 2 / 3);
-                level.sendParticles(ParticleTypes.SOUL_FIRE_FLAME,
+                level.sendParticles(ModParticles.VOID_FLAME.get(),
                         burner.x() + 0.5 + Math.cos(a) * 0.6, burner.y() + 1.1, burner.z() + 0.5 + Math.sin(a) * 0.6,
                         1, 0, 0.03, 0, 0.0);
             }
@@ -266,8 +300,8 @@ public final class BurnerService {
 
     private static void ambience(MinecraftServer server, ServerLevel level) {
         for (LedgerData.Burner burner : Ledger.get(server).data.burners().values()) {
-            if (stands(level, burner)) {
-                level.sendParticles(ParticleTypes.SOUL, burner.x() + 0.5, burner.y() + 1, burner.z() + 0.5,
+            if (stands(level, burner) && level.hasNearbyAlivePlayer(burner.x() + 0.5, burner.y(), burner.z() + 0.5, 48)) {
+                level.sendParticles(ModParticles.VOID_SOUL.get(), burner.x() + 0.5, burner.y() + 1, burner.z() + 0.5,
                         3, 0.2, 0.2, 0.2, 0.01);
             }
         }
@@ -370,6 +404,7 @@ public final class BurnerService {
         ledger.data.bindBurner(player.getUUID(), new LedgerData.Burner(pos.getX(), pos.getY(), pos.getZ()));
         ledger.data.account(player.getUUID()).setLastFedTick(player.server.getTickCount());
         ledger.setDirty();
+        level.setBlock(pos, ModBlocks.VOID_CAMPFIRE.get().defaultBlockState(), 3);
         player.sendSystemMessage(Component.literal("The burner answers to you. Drop offerings upon it."));
         player.addItem(new ItemStack(ModItems.CODEX.get()));
     }

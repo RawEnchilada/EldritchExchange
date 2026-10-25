@@ -1,0 +1,9 @@
+{
+  "parent": "minecraft:block/template_campfire",
+  "textures": {
+    "log": "eldritch_exchange:block/void_campfire_log",
+    "lit_log": "eldritch_exchange:block/void_campfire_log_lit",
+    "fire": "eldritch_exchange:block/void_campfire_fire",
+    "particle": "eldritch_exchange:block/void_campfire_log"
+  }
+}

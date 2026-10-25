@@ -13,7 +13,7 @@ public final class ModEntities {
 
     public static final DeferredHolder<EntityType<?>, EntityType<TentacleEntity>> TENTACLE =
             ENTITIES.register("tentacle", () -> EntityType.Builder.<TentacleEntity>of(TentacleEntity::new, MobCategory.MONSTER)
-                    .sized(0.6F, 2.0F)
+                    .sized(1.0F, 6.0F)
                     .clientTrackingRange(8)
                     .build("tentacle"));
 

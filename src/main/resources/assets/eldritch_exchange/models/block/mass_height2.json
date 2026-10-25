@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/snow_height2",
+  "textures": {
+    "texture": "eldritch_exchange:block/mass",
+    "particle": "eldritch_exchange:block/mass"
+  }
+}

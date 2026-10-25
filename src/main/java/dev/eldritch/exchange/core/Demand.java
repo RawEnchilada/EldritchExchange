@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
-import java.util.UUID;
 
 public final class Demand {
 
@@ -13,6 +12,20 @@ public final class Demand {
     public static final int MIN_SEALED = 3;
     public static final int MAX_SEALED = 6;
 
+    /** Every demand expires after 20 minutes. */
+    public static final long TIMEOUT_TICKS = 24000L;
+    /** Favour at or above this reveals the entity's name. */
+    public static final int NAME_FAVOUR = 3;
+    /** Favour at or below this sometimes swaps Codex withdrawals for junk food. */
+    public static final int LOW_FAVOUR = -2;
+    public static final double SUBSTITUTE_CHANCE = 0.3;
+    /** Chance that an item demand picks from the whole registry instead of the Codex. */
+    public static final double OFF_CODEX_CHANCE = 0.40;
+
+    public enum Kind {
+        ITEM, ANIMAL, SELF, OTHER
+    }
+
     private Demand() {
     }
 
@@ -20,12 +33,19 @@ public final class Demand {
         return madness >= MIN_MADNESS && learnedCount >= MIN_LEARNED && !hasActiveDemand;
     }
 
-    public static long cooldownTicks(Madness.Tier tier) {
-        return switch (tier) {
-            case DEEP -> 7200L;   // 6 min
-            case CRYPTIC -> 14400L; // 12 min
-            default -> 24000L;     // 20 min
-        };
+    /** Animal sacrifice is most common, the player's own death less so, another player's death rare. */
+    public static Kind pickKind(Random random) {
+        int roll = random.nextInt(100);
+        if (roll < 55) {
+            return Kind.ITEM;
+        }
+        if (roll < 80) {
+            return Kind.ANIMAL;
+        }
+        if (roll < 92) {
+            return Kind.SELF;
+        }
+        return Kind.OTHER;
     }
 
     public static int countFor(Madness.Tier tier, Random random) {
@@ -51,6 +71,14 @@ public final class Demand {
         return sealed;
     }
 
+    /** Sealed set for a non-item demand: 3-6 learned items, none of which is demanded. */
+    public static List<String> pickBlocked(List<String> learned, Random random) {
+        List<String> pool = new ArrayList<>(learned);
+        Collections.shuffle(pool, random);
+        int count = MIN_SEALED + random.nextInt(MAX_SEALED - MIN_SEALED + 1);
+        return new ArrayList<>(pool.subList(0, Math.min(count, pool.size())));
+    }
+
     public static String pickDemanded(List<String> learned, List<String> currentlySealed, Random random) {
         List<String> candidates = new ArrayList<>();
         for (String id : learned) {
@@ -62,5 +90,18 @@ public final class Demand {
             return null;
         }
         return candidates.get(random.nextInt(candidates.size()));
+    }
+
+    /**
+     * Picks the requested item. Mostly from the Codex, so it is always reachable, but sometimes
+     * from anything in the registry. Returns null if neither pool has an option.
+     */
+    public static String pickItem(List<String> learned, List<String> anyItem, List<String> currentlySealed, Random random) {
+        boolean offCodex = !anyItem.isEmpty() && (learned.isEmpty() || random.nextDouble() < OFF_CODEX_CHANCE);
+        String picked = pickDemanded(offCodex ? anyItem : learned, currentlySealed, random);
+        if (picked == null) {
+            picked = pickDemanded(learned, currentlySealed, random);
+        }
+        return picked;
     }
 }

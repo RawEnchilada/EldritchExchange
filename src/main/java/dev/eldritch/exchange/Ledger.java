@@ -68,28 +68,38 @@ public final class Ledger extends SavedData {
                 account.setNameRevealed(entry.getBoolean("nameRevealed"));
             }
 
-            // Demand.
-            if (entry.contains("demandItem")) {
-                String demandItem = entry.getString("demandItem");
-                if (!demandItem.isEmpty()) {
-                    int count = entry.getInt("demandCount");
-                    long issued = entry.getLong("demandIssued");
-                    long deadline = entry.getLong("demandDeadline");
-                    String state = entry.getString("demandState");
-                    if (state.isEmpty()) {
-                        state = "ACTIVE";
-                    }
-                    List<String> sealed = new ArrayList<>();
-                    if (entry.contains("sealed")) {
-                        ListTag sealedTag = entry.getList("sealed", Tag.TAG_STRING);
-                        for (int s = 0; s < sealedTag.size(); s++) {
-                            sealed.add(sealedTag.getString(s));
-                        }
-                    }
-                    // Only restore if item still learned? Keep as-is; invalid ids cleaned later.
-                    account.issueDemand(demandItem, count, issued, deadline, sealed);
-                    account.setDemandState(state);
+            if (entry.contains("favour")) {
+                account.setFavour(entry.getInt("favour"));
+            }
+            if (entry.contains("forgotten")) {
+                ListTag forgottenTag = entry.getList("forgotten", Tag.TAG_STRING);
+                List<String> forgotten = new ArrayList<>();
+                for (int s = 0; s < forgottenTag.size(); s++) {
+                    forgotten.add(forgottenTag.getString(s));
                 }
+                account.forget(forgotten);
+            }
+
+            // Demand. Older saves only stored item demands, which default to the ITEM kind.
+            String state = entry.contains("demandState") ? entry.getString("demandState") : "NONE";
+            if (!state.isEmpty() && !"NONE".equals(state)) {
+                String demandItem = entry.getString("demandItem");
+                String kindName = entry.getString("demandKind");
+                dev.eldritch.exchange.core.Demand.Kind kind = kindName.isEmpty()
+                        ? dev.eldritch.exchange.core.Demand.Kind.ITEM
+                        : dev.eldritch.exchange.core.Demand.Kind.valueOf(kindName);
+                int count = entry.getInt("demandCount");
+                long issued = entry.getLong("demandIssued");
+                long deadline = entry.getLong("demandDeadline");
+                List<String> sealed = new ArrayList<>();
+                if (entry.contains("sealed")) {
+                    ListTag sealedTag = entry.getList("sealed", Tag.TAG_STRING);
+                    for (int s = 0; s < sealedTag.size(); s++) {
+                        sealed.add(sealedTag.getString(s));
+                    }
+                }
+                account.issueDemand(kind, demandItem.isEmpty() ? null : demandItem, count, issued, deadline, sealed);
+                account.setDemandState(state);
             }
 
             // Tithe debt.
@@ -146,8 +156,16 @@ public final class Ledger extends SavedData {
             account.putInt("fulfilledDemands", entry.getValue().fulfilledDemands());
             account.putBoolean("nameRevealed", entry.getValue().nameRevealed());
 
-            if (entry.getValue().demandItemId() != null) {
-                account.putString("demandItem", entry.getValue().demandItemId());
+            account.putInt("favour", entry.getValue().favour());
+            ListTag forgotten = new ListTag();
+            for (String id : entry.getValue().forgotten()) {
+                forgotten.add(StringTag.valueOf(id));
+            }
+            account.put("forgotten", forgotten);
+
+            if (!"NONE".equals(entry.getValue().demandState())) {
+                account.putString("demandItem", entry.getValue().demandItemId() == null ? "" : entry.getValue().demandItemId());
+                account.putString("demandKind", entry.getValue().demandKind() == null ? "" : entry.getValue().demandKind().name());
                 account.putInt("demandCount", entry.getValue().demandCount());
                 account.putLong("demandIssued", entry.getValue().demandIssuedTick());
                 account.putLong("demandDeadline", entry.getValue().demandDeadlineTick());

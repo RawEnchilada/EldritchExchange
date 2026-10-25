@@ -4,6 +4,7 @@ import net.minecraft.server.MinecraftServer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.ServerChatEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -23,6 +24,7 @@ public final class Events {
         }
         BurnerService.tick(server);
         MadnessService.tick(server);
+        MassService.tick(server);
     }
 
     @SubscribeEvent
@@ -33,6 +35,11 @@ public final class Events {
     @SubscribeEvent
     public static void onHurt(LivingIncomingDamageEvent event) {
         MadnessService.onHurt(event);
+    }
+
+    @SubscribeEvent
+    public static void onDeath(LivingDeathEvent event) {
+        MadnessService.onDeath(event);
     }
 
     @SubscribeEvent

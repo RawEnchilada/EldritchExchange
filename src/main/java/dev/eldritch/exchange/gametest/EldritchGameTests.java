@@ -21,7 +21,7 @@ public final class EldritchGameTests {
     @GameTest(template = "empty")
     public static void codexItemIsRegistered(GameTestHelper helper) {
         String id = BuiltInRegistries.ITEM.getKey(ModItems.CODEX.get()).toString();
-        if (!id.equals("eldritch:codex")) {
+        if (!id.equals("eldritch_exchange:codex")) {
             helper.fail("codex registered as " + id);
         }
         helper.succeed();
@@ -61,7 +61,7 @@ public final class EldritchGameTests {
                 continue;
             }
             String id = ValueTable.itemId(item);
-            if (id.startsWith("eldritch:")) {
+            if (id.startsWith("eldritch_exchange:")) {
                 continue;
             }
             if (ValueTable.value(id) < 1) {

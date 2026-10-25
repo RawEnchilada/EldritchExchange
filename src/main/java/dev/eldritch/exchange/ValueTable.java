@@ -214,7 +214,7 @@ public final class ValueTable {
                 continue;
             }
             String id = itemId(item);
-            if (complete.containsKey(id) || id.startsWith("eldritch:")) {
+            if (complete.containsKey(id) || id.startsWith("eldritch_exchange:")) {
                 continue;
             }
             complete.put(id, fallbackValue(item));

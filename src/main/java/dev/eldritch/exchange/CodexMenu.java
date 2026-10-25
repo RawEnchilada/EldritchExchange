@@ -1,5 +1,6 @@
 package dev.eldritch.exchange;
 
+import dev.eldritch.exchange.core.Demand;
 import dev.eldritch.exchange.core.Economy;
 import dev.eldritch.exchange.core.LedgerData;
 import dev.eldritch.exchange.core.Risk;
@@ -33,32 +34,76 @@ public final class CodexMenu extends AbstractContainerMenu {
     public static final int COLUMNS = 9;
     public static final int ROWS = 6;
     public static final int PER_PAGE = COLUMNS * ROWS;
+    public static final int GRID_Y = 54;
 
     static final int DATA_ESSENCE = 0;
     static final int DATA_MADNESS = 1;
     static final int DATA_PAGE = 2;
     static final int DATA_PAGES = 3;
+    static final int DATA_DEMAND_ITEM = 4; // registry id, -1 when nothing is demanded
+    static final int DATA_DEMAND_COUNT = 5;
+    static final int DATA_SEALED_LOW = 6;  // bit i set = grid slot i is sealed
+    static final int DATA_SEALED_HIGH = 7; // bit i set = grid slot 27 + i is sealed
+    static final int DATA_DEMAND_KIND = 8; // Demand.Kind ordinal + 1, 0 when nothing is active
+    static final int DATA_FAVOUR = 9;
+    static final int DATA_SORT = 10;
+    static final int SEALED_BITS = 27;
 
     static final int BUTTON_PREVIOUS = 0;
     static final int BUTTON_NEXT = 1;
 
+    private static final java.util.Map<String, String> NAMES = new java.util.HashMap<>();
+
     private final SimpleContainer grid = new SimpleContainer(PER_PAGE);
-    private final SimpleContainerData info = new SimpleContainerData(4);
+    private final SimpleContainerData info = new SimpleContainerData(11);
+    private final ServerPlayer owner;
     private List<String> shown = List.of();
     private String query = "";
-    private int sortMode = 0; // 0 cost, 1 name, 2 mod
+
 
     public CodexMenu(int containerId, Inventory inventory) {
         super(ModMenus.CODEX.get(), containerId);
+        owner = inventory.player instanceof ServerPlayer player ? player : null;
         for (int row = 0; row < ROWS; row++) {
             for (int col = 0; col < COLUMNS; col++) {
-                addSlot(new GridSlot(grid, row * COLUMNS + col, 8 + col * 18, 36 + row * 18));
+                addSlot(new GridSlot(grid, row * COLUMNS + col, 8 + col * 18, GRID_Y + row * 18));
             }
         }
         addDataSlots(info);
-        if (inventory.player instanceof ServerPlayer player) {
-            refresh(player);
+        if (owner != null) {
+            refresh(owner);
         }
+    }
+
+    public Item demandItem() {
+        int id = info.get(DATA_DEMAND_ITEM);
+        return id < 0 ? null : BuiltInRegistries.ITEM.byId(id);
+    }
+
+    public int demandCount() {
+        return info.get(DATA_DEMAND_COUNT);
+    }
+
+    public int favour() {
+        return info.get(DATA_FAVOUR);
+    }
+
+    public Demand.Kind demandKind() {
+        int kind = info.get(DATA_DEMAND_KIND);
+        return kind <= 0 ? null : Demand.Kind.values()[kind - 1];
+    }
+
+    public boolean isSealedSlot(int slot) {
+        int word = slot < SEALED_BITS ? info.get(DATA_SEALED_LOW) : info.get(DATA_SEALED_HIGH);
+        return ((word >> (slot % SEALED_BITS)) & 1) != 0;
+    }
+
+    @Override
+    public void broadcastChanges() {
+        if (owner != null && owner.server.getTickCount() % 20 == 0) {
+            refreshDemand(owner);
+        }
+        super.broadcastChanges();
     }
 
     public int essence() {
@@ -81,13 +126,14 @@ public final class CodexMenu extends AbstractContainerMenu {
         return query;
     }
 
+    /** 0 cost, 1 name, 2 mod. Kept in a synced slot so the client's button and search see the real value. */
     public int sortMode() {
-        return sortMode;
+        return info.get(DATA_SORT);
     }
 
     public void applyFilter(ServerPlayer player, String query, int sortMode) {
         this.query = query == null ? "" : query;
-        this.sortMode = sortMode;
+        info.set(DATA_SORT, sortMode);
         info.set(DATA_PAGE, 0);
         refresh(player);
     }
@@ -97,13 +143,14 @@ public final class CodexMenu extends AbstractContainerMenu {
         Ledger ledger = Ledger.get(server);
         LedgerData data = ledger.data;
         List<String> learned = data.learned();
+        LedgerData.Account account = data.account(player.getUUID());
         List<String> filtered = new ArrayList<>();
         for (String id : learned) {
-            if (matches(id, query)) {
+            if (!account.isForgotten(id) && matches(id, query)) {
                 filtered.add(id);
             }
         }
-        filtered.sort(comparator(sortMode));
+        filtered.sort(comparator(info.get(DATA_SORT)));
         shown = filtered;
 
         int pages = Math.max(1, (shown.size() + PER_PAGE - 1) / PER_PAGE);
@@ -114,7 +161,6 @@ public final class CodexMenu extends AbstractContainerMenu {
         info.set(DATA_PAGE, page);
         info.set(DATA_PAGES, pages);
 
-        LedgerData.Account account = data.account(player.getUUID());
         long essence = account.essence();
         for (int i = 0; i < PER_PAGE; i++) {
             int index = page * PER_PAGE + i;
@@ -123,6 +169,37 @@ public final class CodexMenu extends AbstractContainerMenu {
 
         info.set(DATA_ESSENCE, (int) Math.min(essence, Integer.MAX_VALUE));
         info.set(DATA_MADNESS, account.madness());
+        refreshDemand(player);
+    }
+
+    private void refreshDemand(ServerPlayer player) {
+        LedgerData.Account account = Ledger.get(player.server).data.account(player.getUUID());
+        String demanded = account.demandItemId();
+        boolean active = "ACTIVE".equals(account.demandState());
+        int demandId = -1;
+        if (active && demanded != null) {
+            demandId = BuiltInRegistries.ITEM.getId(BuiltInRegistries.ITEM.get(ResourceLocation.parse(demanded)));
+        }
+        info.set(DATA_DEMAND_ITEM, demandId);
+        info.set(DATA_DEMAND_COUNT, active ? account.demandCount() : 0);
+        info.set(DATA_DEMAND_KIND, active && account.demandKind() != null ? account.demandKind().ordinal() + 1 : 0);
+        info.set(DATA_FAVOUR, account.favour());
+
+        int page = info.get(DATA_PAGE);
+        int low = 0;
+        int high = 0;
+        for (int i = 0; i < PER_PAGE; i++) {
+            int index = page * PER_PAGE + i;
+            if (index < shown.size() && account.isSealed(shown.get(index))) {
+                if (i < SEALED_BITS) {
+                    low |= 1 << i;
+                } else {
+                    high |= 1 << (i - SEALED_BITS);
+                }
+            }
+        }
+        info.set(DATA_SEALED_LOW, low);
+        info.set(DATA_SEALED_HIGH, high);
     }
 
     private static ItemStack iconFor(String itemId, long essence) {
@@ -197,7 +274,13 @@ public final class CodexMenu extends AbstractContainerMenu {
         Risk.Event event = Risk.roll(cost, random.nextDouble(), random.nextDouble());
         boolean keep = RiskEffects.apply(player, event);
         if (keep) {
-            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
+            // Low favour: the void sometimes hands over junk instead of what was paid for.
+            String given = itemId;
+            if (ledger.data.account(player.getUUID()).favour() <= Demand.LOW_FAVOUR
+                    && random.nextDouble() < Demand.SUBSTITUTE_CHANCE) {
+                given = random.nextBoolean() ? "minecraft:rotten_flesh" : "minecraft:poisonous_potato";
+            }
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(given)));
             if (!player.addItem(stack)) {
                 player.drop(stack, false);
             }
@@ -215,22 +298,20 @@ public final class CodexMenu extends AbstractContainerMenu {
             String itemNs = itemId.contains(":") ? itemId.substring(0, itemId.indexOf(':')) : "";
             return ns.isEmpty() || itemNs.contains(ns);
         }
-        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId));
-        String name = new ItemStack(item).getHoverName().getString().toLowerCase();
-        return name.contains(needle.toLowerCase());
+        return displayName(itemId).contains(needle.toLowerCase());
+    }
+
+    /** Lowercase display name, cached: search and name sorting would otherwise build an ItemStack per comparison. */
+    private static String displayName(String itemId) {
+        return NAMES.computeIfAbsent(itemId, id -> new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(id)))
+                .getHoverName().getString().toLowerCase(java.util.Locale.ROOT));
     }
 
     private Comparator<String> comparator(int mode) {
         return switch (mode) {
-            case 1 -> Comparator.comparing((String id) -> {
-                Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(id));
-                return new ItemStack(item).getHoverName().getString().toLowerCase();
-            });
+            case 1 -> Comparator.comparing(CodexMenu::displayName);
             case 2 -> Comparator.comparing((String id) -> id.contains(":") ? id.substring(0, id.indexOf(':')) : "")
-                    .thenComparing(id -> {
-                        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(id));
-                        return new ItemStack(item).getHoverName().getString().toLowerCase();
-                    });
+                    .thenComparing(CodexMenu::displayName);
             default -> Comparator.comparingLong(ValueTable::value).thenComparing(id -> id);
         };
     }
